@@ -13,8 +13,10 @@ from numpy import ndarray
 import torch
 from torch import nn, optim
 from torch.utils.data import TensorDataset, DataLoader
+from PIL import Image
 
-from Seg2linkUnet2d.preprocess import load_image, _make_folder, _normalize_image, _normalize_label, divide_flip_rotate
+from Seg2linkUnet2d.preprocess import load_image, _make_folder, _normalize_image, _normalize_label, divide_flip_rotate, \
+    load_filenames, load_one_image
 
 TITLE_STYLE = {'fontsize': 16, 'verticalalignment': 'bottom'}
 SIZE_SUBIMAGES = (160, 160)
@@ -23,6 +25,7 @@ ImageSize = namedtuple("ImageSize", ["x", "y"])
 DataPaths = namedtuple("DataPaths", ["train_image", "train_cells", "test_image", "test_cells", "models"])
 DataRaw = namedtuple("DataRaw", ["train_image", "train_cells"])
 DataNorm = namedtuple("DataNorm", ["train_image", "train_cells"])
+Train_Stat = namedtuple("Train_Stat", ["mean", "std"])
 
 
 class UNet2(nn.Module):
@@ -65,7 +68,7 @@ class Down(nn.Module):
     def __init__(self, channels_in: int, channels_out: int, pool_size: Tuple[int, int]):
         super().__init__()
         self.down = nn.Sequential(
-            nn.MaxPool2d(pool_size),
+            nn.MaxPool2d(pool_size, ceil_mode=True),
             ConvTwice(channels_in, channels_out),
         )
 
@@ -82,7 +85,8 @@ class Up(nn.Module):
 
     def forward(self, x1, x2):
         x = self.up(x1)
-        x = self.concat((x, x2), dim=1)
+        x2_shape = x2.shape
+        x = self.concat((x[:, :, :x2_shape[2], :x2_shape[3]], x2), dim=1)
         return self.conv_(x)
 
 
@@ -131,8 +135,10 @@ class TrainingUNet2D:
     """
 
     def __init__(self, data_path: str, model: nn.Module):
+        self.test_image_filenames = []
         self.train_loader = None
         self.train_img1_size = ImageSize(0, 0)
+        self.train_stat = Train_Stat(0, 0)
         self.data_path = data_path
         self.model = model()
         self.paths = DataPaths("", "", "", "", "")
@@ -188,7 +194,8 @@ class TrainingUNet2D:
         """
         Normalize the images and divided them into small images for training the model
         """
-        train_image_norm = _normalize_image(self.raw_data.train_image)
+        train_image_norm, mean, std = _normalize_image(self.raw_data.train_image)
+        self.train_stat = Train_Stat(mean, std)
         train_label_norm = _normalize_label(self.raw_data.train_cells)
         self.norm_data = DataNorm(train_image_norm, train_label_norm)
         print("Images were normalized")
@@ -281,7 +288,7 @@ class TrainingUNet2D:
 
         if self.current_epoch == 1:
             train_accuracy, train_loss = self.predict_train(loss_func)
-            print(f"(Before training) Train loss_func: {train_loss}, Train accuracy: {train_accuracy}")
+            print(f"(Before training) Train loss: {train_loss}, Train accuracy: {train_accuracy}")
 
         start_epoch = self.current_epoch
         end_epoch = self.current_epoch + iteration
@@ -298,19 +305,19 @@ class TrainingUNet2D:
                     X_loss.backward()
                     self.optimizer.step()
                     pbar.update(1)
-                    pbar.set_postfix(**{'Train loss_func': train_loss / n})
+                    pbar.set_postfix(**{'Train loss': train_loss / n})
                     if n > epoch_length:
                         break
 
             train_accuracy, train_loss = self.predict_train(loss_func)
             if epoch == 1:
-                print(f"Train loss_func: {train_loss}, Train accuracy: {train_accuracy}")
+                print(f"Train loss: {train_loss}, Train accuracy: {train_accuracy}")
                 torch.save(self.model.state_dict(), Path(self.paths.models) / (weights_name + f"epoch{epoch}.pt"))
                 torch.save(self.model.state_dict(), Path(self.paths.models) / "pretrained_unet3.pt")
                 self._draw_prediction(epoch)
             else:
                 if train_accuracy > max(self.train_acc):
-                    print(f"Train loss_func  {train_loss}, "
+                    print(f"Train loss: {train_loss}, "
                           f"Train accuracy was improved from {max(self.train_acc)} to {train_accuracy}")
                     torch.save(self.model.state_dict(), Path(self.paths.models) / (weights_name + f"epoch{epoch}.pt"))
                     torch.save(self.model.state_dict(), Path(self.paths.models) / "pretrained_unet3.pt")
@@ -341,11 +348,27 @@ class TrainingUNet2D:
         plt.tight_layout()
         plt.pause(0.1)
 
-    def draw_test_prediction(self):
-        train_prediction = unet2_prediction(self.norm_data.train_image[0], self.model)
+    def load_pretrained_unet(self, path: str):
+        self.model.load_state_dict(torch.load(path))
+        self.model.eval()
+
+    def predict_test_image1(self, percentile_top=99.9, percentile_bottom=0.1):
+        test_image_filenames = load_filenames(self.paths.test_image)
+        test_img1_norm = (load_one_image(test_image_filenames[0]) - self.train_stat.mean) / self.train_stat.std
+        test_prediction_img1 = unet2_prediction(test_img1_norm, self.model)
         axs = self._subplots_2images(percentile_bottom, percentile_top,
-                                     self.raw_data.train_image, [train_prediction])
-        axs[0].set_title("Image #1 (train)", fontdict=TITLE_STYLE)
-        axs[1].set_title(f"Cell prediction #1 at step {step} (train)", fontdict=TITLE_STYLE)
+                                     [test_img1_norm], [test_prediction_img1])
+        axs[0].set_title("Image #1 (test)", fontdict=TITLE_STYLE)
+        axs[1].set_title(f"Cell prediction #1 (test)", fontdict=TITLE_STYLE)
         plt.tight_layout()
         plt.pause(0.1)
+
+    def save_predictions_test(self):
+        test_image_filenames = load_filenames(self.paths.test_image)
+        with tqdm(total=len(test_image_filenames), ncols=50, unit='slice') as pbar:
+            for filename in test_image_filenames:
+                path_file = Path(filename)
+                img_norm = (load_one_image(filename) - self.train_stat.mean) / self.train_stat.std
+                prediction = unet2_prediction(img_norm, self.model)
+                Image.fromarray(prediction).save(str(Path(self.paths.test_cells) / ("cell_" + path_file.stem +".tiff")))
+                pbar.update(1)

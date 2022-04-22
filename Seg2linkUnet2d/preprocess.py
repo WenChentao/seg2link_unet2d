@@ -47,6 +47,18 @@ def load_image(path: str, print_: bool = True) -> List[ndarray]:
     return img_list
 
 
+def load_filenames(path: str) -> List[str]:
+    """Load images as list into RAM"""
+    paths_list = get_files(Path(path))
+    if not paths_list:
+        raise ValueError(f"No tif files found in the path: {path}")
+    return paths_list
+
+
+def load_one_image(path: str):
+    return np.array(Image.open(path))
+
+
 def get_files(path: Path) -> List[str]:
     """Return all paths of .tiff or .tif files"""
     return [str(file) for file in sorted(path.glob("*.tif*"))]
@@ -90,13 +102,13 @@ def lcn_gpu(img3d, noise_level=5, filter_size=(27, 27, 1)):
     return np.divide(img3d - avg, std + noise_level)
 
 
-def _normalize_image(images: List[ndarray]) -> List[ndarray]:
+def _normalize_image(images: List[ndarray]) -> Tuple[List[ndarray], float, float]:
     """
     Normalize 2D images by standardization
     """
     mean = np.mean([np.mean(img) for img in images])
     std = np.mean([np.std(img) for img in images])
-    return [(img - mean) / std for img in images]
+    return [(img - mean) / std for img in images], mean, std
 
 
 def _normalize_label(label_imgs: List[ndarray]) -> List[ndarray]:
