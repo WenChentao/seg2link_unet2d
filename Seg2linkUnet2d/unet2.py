@@ -295,7 +295,7 @@ class TrainingUNet2D:
         for epoch in range(start_epoch, end_epoch):
             train_loss = 0
             n = 0
-            with tqdm(total=epoch_length, desc=f'Epoch {epoch}/{end_epoch - 1}', unit='batch') as pbar:
+            with tqdm(total=epoch_length, desc=f'Epoch {epoch}/{end_epoch - 1}', ncols=50, unit='batch') as pbar:
                 for X, y in self.train_loader:
                     X_prediction = self.model(X)
                     X_loss = loss_func(X_prediction, y.to(torch.float))
