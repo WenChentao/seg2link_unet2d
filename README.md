@@ -17,7 +17,7 @@ $ conda activate unet2-env
 ```console
 $ pip install notebook
 ```
-- Install seg2link:
+- Install Seg2linkUnet2d:
 ```console
 $ pip install seg2link
 ```
@@ -31,5 +31,5 @@ $ conda activate unet2-env
 ```console
 $ jupyter notebook
 ```
-- Open the notebook under the /Example folder and run
+- Open the notebook under the /Examples folder and run
 the codes according to the instructions.
