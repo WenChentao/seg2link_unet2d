@@ -1,0 +1,5 @@
+matplotlib~=3.5.1
+numpy~=1.21.5
+tqdm~=4.63.0
+pillow~=9.0.1
+Seg2linkUnet2d~=0.1.0
