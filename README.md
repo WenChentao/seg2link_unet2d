@@ -21,7 +21,7 @@ $ pip install seg2link_unet2d[local]
 ## Use the notebook for training/segmentation
 - Activate the created environment by:
 ```console
-$ conda activate unet2-env
+$ conda activate unet2
 ```
 - Start the jupyter notebook
 ```console
