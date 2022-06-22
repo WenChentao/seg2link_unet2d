@@ -159,8 +159,8 @@ class TrainingUNet2D:
         print("Following folders were made: ")
         train_image_path = _make_folder(os.path.join(data_path, "train_image/"))
         train_label_path = _make_folder(os.path.join(data_path, "train_label/"))
-        test_image_path = _make_folder(os.path.join(data_path, "test_image/"))
-        test_label_path = _make_folder(os.path.join(data_path, "test_label/"))
+        test_image_path = _make_folder(os.path.join(data_path, "raw_image/"))
+        test_label_path = _make_folder(os.path.join(data_path, "raw_label/"))
         models_path = _make_folder(os.path.join(data_path, f"models_{datetime.now().strftime('%Y_%h_%d-%H_%M_%S')}/"))
         self.paths = DataPaths(train_image_path, train_label_path, test_image_path, test_label_path, models_path)
 
