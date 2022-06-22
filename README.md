@@ -17,9 +17,9 @@ $ conda activate unet2-env
 ```console
 $ pip install notebook
 ```
-- Install Seg2linkUnet2d:
+- Install seg2link_unet2d:
 ```console
-$ pip install seg2link
+$ pip install seg2link_unet2d
 ```
 
 ## Use the notebook for training/segmentation

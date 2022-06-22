@@ -15,7 +15,7 @@ from torch import nn, optim
 from torch.utils.data import TensorDataset, DataLoader
 from PIL import Image
 
-from Seg2linkUnet2d.preprocess import load_image, _make_folder, _normalize_image, _normalize_label, divide_flip_rotate, \
+from seg2link_unet2d.preprocess import load_image, _make_folder, _normalize_image, _normalize_label, divide_flip_rotate, \
     load_filenames, load_one_image
 
 TITLE_STYLE = {'fontsize': 16, 'verticalalignment': 'bottom'}
