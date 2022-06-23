@@ -139,7 +139,7 @@ class TrainingUNet2D:
         self.train_loader = None
         self.train_img1_size = ImageSize(0, 0)
         self.train_stat = Train_Stat(0, 0)
-        self.data_path = data_path
+        self.data_path = os.path.abspath(data_path)
         self.model = model()
         self.paths = DataPaths("", "", "", "", "")
         self.raw_data = DataRaw([], [])
