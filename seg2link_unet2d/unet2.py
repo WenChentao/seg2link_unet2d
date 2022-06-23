@@ -363,6 +363,19 @@ class TrainingUNet2D:
         plt.tight_layout()
         plt.pause(0.1)
 
+    def predict_test_image(self, slice_number=1, percentile_top=99.9, percentile_bottom=0.1):
+        test_image_filenames = load_filenames(self.paths.test_image)
+        if slice_number > len(test_image_filenames) or slice_number <= 0:
+            raise ValueError(f"The slice_number must be between 1 and {len(test_image_filenames)}")
+        test_img_norm = (load_one_image(test_image_filenames[slice_number-1]) - self.train_stat.mean) / self.train_stat.std
+        test_prediction_img = unet2_prediction(test_img_norm, self.model)
+        axs = self._subplots_2images(percentile_bottom, percentile_top,
+                                     [test_img_norm], [test_prediction_img])
+        axs[0].set_title(f"Image #{slice_number} (test)", fontdict=TITLE_STYLE)
+        axs[1].set_title(f"Cell prediction #{slice_number} (test)", fontdict=TITLE_STYLE)
+        plt.tight_layout()
+        plt.pause(0.1)
+
     def save_predictions_test(self):
         test_image_filenames = load_filenames(self.paths.test_image)
         with tqdm(total=len(test_image_filenames), ncols=50, unit='slice') as pbar:
