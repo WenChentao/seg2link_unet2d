@@ -15,7 +15,7 @@ $ conda activate unet2
 - Install [PyTorch](https://pytorch.org/get-started/locally/)
 - Install seg2link_unet2d:
 ```console
-$ pip install seg2link_unet2d[local]
+$ pip install seg2link-unet2d[local]
 ```
 
 ## Use the notebook for training/segmentation
