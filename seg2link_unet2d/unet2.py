@@ -295,6 +295,7 @@ class TrainingUNet2D:
         for epoch in range(start_epoch, end_epoch):
             train_loss = 0
             n = 0
+            self.model.train()
             with tqdm(total=epoch_length, desc=f'Epoch {epoch}/{end_epoch - 1}', ncols=50, unit='batch') as pbar:
                 for X, y in self.train_loader:
                     X_prediction = self.model(X)
@@ -309,6 +310,7 @@ class TrainingUNet2D:
                     if n > epoch_length:
                         break
 
+            self.model.eval()
             train_accuracy, train_loss = self.predict_train(loss_func)
             if epoch == 1:
                 print(f"Train loss: {train_loss}, Train accuracy: {train_accuracy}")
