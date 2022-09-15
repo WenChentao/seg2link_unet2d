@@ -149,6 +149,8 @@ class TrainingUNet2D:
         self.current_epoch = 1
         self.optimizer = optim.Adam(self.model.parameters())
         self.make_folders()
+        self.wa = 0.0
+        self.wb = 0.5
 
     def make_folders(self):
         """
@@ -227,21 +229,21 @@ class TrainingUNet2D:
         plt.pause(0.1)
 
     @staticmethod
-    def _subplots_2images(percentile_bottom, percentile_top, imgs_1: List[ndarray], imgs_2: List[ndarray]):
+    def _subplots_2images(percentile_bottom, percentile_top, imgs_raw: List[ndarray], imgs_label: List[ndarray]):
         """Make a (2, 2) layout figure to show 4 images"""
-        siz_x, siz_y = imgs_1[0].shape
+        siz_x, siz_y = imgs_raw[0].shape
         if siz_x > siz_y:
-            imgs_1_ = imgs_1[0].transpose()
-            imgs_2_ = imgs_2[0].transpose()
+            imgs_1_ = imgs_raw[0].transpose()
+            imgs_2_ = imgs_label[0].transpose()
             siz_y, siz_x = siz_x, siz_y
         else:
-            imgs_1_ = imgs_1[0]
-            imgs_2_ = imgs_2[0]
+            imgs_1_ = imgs_raw[0]
+            imgs_2_ = imgs_label[0]
         fig, axs = plt.subplots(1, 2, figsize=(20, int(12 * siz_x / siz_y)))
-        vmax_train = np.percentile(imgs_1, percentile_top)
-        vmin_train = np.percentile(imgs_1, percentile_bottom)
+        vmax_train = np.percentile(imgs_raw, percentile_top)
+        vmin_train = np.percentile(imgs_raw, percentile_bottom)
         axs[0].imshow(imgs_1_, vmin=vmin_train, vmax=vmax_train, cmap="gray")
-        axs[1].imshow(imgs_2_, cmap="gray")
+        axs[1].imshow(imgs_2_, vmin=0, vmax=1, cmap="gray")
         return axs
 
     def draw_divided_train_data(self, percentile_top=99.9, percentile_bottom=0.1):
@@ -269,26 +271,28 @@ class TrainingUNet2D:
         plt.tight_layout()
         plt.pause(0.1)
 
-    def train(self, iteration=30, weights_name="weights_training_"):
+    def train(self, iteration: int = 30, weights_cell_bg: Tuple[float, float] = None, weights_name: str ="weights_training_"):
         """
         Train the 2D U-Net model
-        Parameters
-        ----------
-        iteration : int, optional
-            The number of epochs to train the model. Default: 100
-        weights_name : str, optional
-            The prefix of the weights files to be stored during training.
+
         Notes
         -----
         The training can be stopped by pressing Ctrl + C if users feel the prediction is good enough during training.
         Every time the train loss was reduced, the weights file will be stored into the /models folder
         """
-        loss_func = nn.BCELoss()
-        epoch_length = 32
+        if weights_cell_bg is not None:
+            w_cell, w_bg = weights_cell_bg
+            w_sum = w_cell + w_bg
+            w_cell = w_cell / w_sum
+            w_bg = w_bg / w_sum
+            self.wa, self.wb = w_cell - w_bg, w_bg
+
+        loss_func = nn.BCELoss(reduction="none")
+        epoch_length = 100
 
         if self.current_epoch == 1:
-            train_accuracy, train_loss = self.predict_train(loss_func)
-            print(f"(Before training) Train loss: {train_loss}, Train accuracy: {train_accuracy}")
+            acc_pos, acc_neg, train_loss = self.predict_train(loss_func)
+            print(f"(Before training) Train accuracy (balanced): {(acc_pos+acc_neg)/2:4f} (pos: {acc_pos:4f}, neg: {acc_neg:4f})")
 
         start_epoch = self.current_epoch
         end_epoch = self.current_epoch + iteration
@@ -299,7 +303,10 @@ class TrainingUNet2D:
             with tqdm(total=epoch_length, desc=f'Epoch {epoch}/{end_epoch - 1}', ncols=50, unit='batch') as pbar:
                 for X, y in self.train_loader:
                     X_prediction = self.model(X)
-                    X_loss = loss_func(X_prediction, y.to(torch.float))
+                    X_loss = self.weighted_loss(loss_func, X_prediction,
+                                                y.to(torch.float),
+                                                y.to(torch.float) * self.wa + self.wb)
+                    # X_loss = loss_func(X_prediction, y.to(torch.float))
                     train_loss += X_loss.item()
                     n += 1
                     self.optimizer.zero_grad()
@@ -311,16 +318,17 @@ class TrainingUNet2D:
                         break
 
             self.model.eval()
-            train_accuracy, train_loss = self.predict_train(loss_func)
+            acc_pos, acc_neg, train_loss = self.predict_train(loss_func)
+            train_accuracy = (acc_pos + acc_neg) / 2
             if epoch == 1:
-                print(f"Train loss: {train_loss}, Train accuracy: {train_accuracy}")
+                print(f"Train accuracy (balanced): {train_accuracy:4f} (pos: {acc_pos:4f}, neg: {acc_neg:4f})")
                 torch.save(self.model.state_dict(), Path(self.paths.models) / (weights_name + f"epoch{epoch}.pt"))
                 torch.save(self.model.state_dict(), Path(self.paths.models) / "pretrained_unet3.pt")
                 self._draw_prediction(epoch)
             else:
                 if train_accuracy > max(self.train_acc):
-                    print(f"Train loss: {train_loss}, "
-                          f"Train accuracy was improved from {max(self.train_acc)} to {train_accuracy}")
+                    print(f"Train accuracy (balanced) was improved from "
+                          f"{max(self.train_acc):.4f} to {train_accuracy:4f} (pos: {acc_pos:4f}, neg: {acc_neg:4f})")
                     torch.save(self.model.state_dict(), Path(self.paths.models) / (weights_name + f"epoch{epoch}.pt"))
                     torch.save(self.model.state_dict(), Path(self.paths.models) / "pretrained_unet3.pt")
                     self._draw_prediction(epoch)
@@ -328,17 +336,30 @@ class TrainingUNet2D:
             self.current_epoch += 1
         print(f"The best model has been saved as: \n{str(Path(self.paths.models) / 'pretrained_unet3.pt')}")
 
+    def weighted_loss(self, criterion, X_prediction, y, W):
+        X_loss = criterion(X_prediction, y)
+        X_loss = W * X_loss
+        X_loss = torch.mean(torch.sum(X_loss.flatten(start_dim=1), axis=0))
+        return X_loss
+
     def predict_train(self, loss):
-        acc = []
         loss_ = []
+        train_tp = torch.tensor(0)
+        train_tn = torch.tensor(0)
+        n_pos = torch.tensor(0)
+        n_neg = torch.tensor(0)
         for img, cell in zip(self.norm_data.train_image, self.norm_data.train_cells):
             train_prediction = self.model(torch.Tensor(np.expand_dims(img, axis=(0, 1))))
             train_groundtruth = torch.Tensor(np.expand_dims(cell, axis=(0, 1)))
-            train_loss = loss(train_prediction, train_groundtruth)
-            train_accuracy = torch.sum((train_prediction > 0.5) == train_groundtruth) / train_prediction.numel()
-            acc.append(train_accuracy)
+            train_loss = self.weighted_loss(loss, train_prediction, train_groundtruth, train_groundtruth * self.wa + self.wb)
+            #train_accuracy = torch.sum((train_prediction > 0.5) == train_groundtruth) / train_prediction.numel()
+            gt_bool = train_groundtruth.to(torch.bool)
+            n_pos += torch.sum(gt_bool)
+            n_neg += torch.sum(~gt_bool)
+            train_tp += torch.sum(train_prediction[gt_bool] > 0.5)
+            train_tn += torch.sum(train_prediction[~gt_bool] <= 0.5)
             loss_.append(train_loss.item())
-        return np.mean(acc), np.mean(loss_)
+        return train_tp/n_pos, train_tn/n_neg, np.mean(loss_)
 
     def _draw_prediction(self, step, percentile_top=99.9, percentile_bottom=0.1):
         """Draw the predictions in current step"""
@@ -385,5 +406,6 @@ class TrainingUNet2D:
                 path_file = Path(filename)
                 img_norm = (load_one_image(filename) - self.train_stat.mean) / self.train_stat.std
                 prediction = unet2_prediction(img_norm, self.model)
-                Image.fromarray(prediction).save(str(Path(self.paths.test_cells) / ("cell_" + path_file.stem +".tiff")))
+                prediction_uint8 = (prediction > 0.5).view(np.uint8)
+                Image.fromarray(prediction_uint8).save(str(Path(self.paths.test_cells) / ("cell_" + path_file.stem +".tiff")))
                 pbar.update(1)
