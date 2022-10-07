@@ -1,8 +1,9 @@
-**Seg2linkUnet2d** is a package for training 2D U-Net, 
-and using the trained 2D U-Net to make semantic segmentation 
+**Seg2linkUnet2d** is a package for training a 2D U-Net to predict cell/non-cell regions 
 in 3D bio-medical images.
 
-Seg2linkUnet2d is based on PyTorch.
+Seg2linkUnet2d and [Seg2Link](https://github.com/WenChentao/Seg2Link) can be used together to perform semi-automatic 3D cell segmentation. 
+Read the [documentation](https://wenchentao.github.io/Seg2Link/seg2link-unet2d.html) to learn how to do it.
+
 
 ## Install
 - Install [Anaconda](https://www.anaconda.com/products/individual) 
