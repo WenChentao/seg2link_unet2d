@@ -1,3 +1,6 @@
+
+[![PyPI](https://img.shields.io/pypi/v/seg2link-unet2d)](https://pypi.org/project/seg2link-unet2d/) [![GitHub](https://img.shields.io/github/license/WenChentao/3DeeCellTracker)](https://github.com/WenChentao/3DeeCellTracker/blob/master/LICENSE)
+
 **Seg2linkUnet2d** is a package for training a 2D U-Net to predict cell/non-cell regions 
 in 3D bio-medical images.
 
