@@ -239,7 +239,8 @@ class TrainingUNet2D:
         else:
             imgs_1_ = imgs_raw[0]
             imgs_2_ = imgs_label[0]
-        fig, axs = plt.subplots(1, 2, figsize=(20, int(12 * siz_x / siz_y)))
+        print(12 * siz_x / siz_y)
+        fig, axs = plt.subplots(1, 2, figsize=(20, 3 + int(10 * siz_x / siz_y)))
         vmax_train = np.percentile(imgs_raw, percentile_top)
         vmin_train = np.percentile(imgs_raw, percentile_bottom)
         axs[0].imshow(imgs_1_, vmin=vmin_train, vmax=vmax_train, cmap="gray")
