@@ -13,6 +13,7 @@ from numpy import ndarray
 import torch
 from torch import nn, optim
 from torch.utils.data import TensorDataset, DataLoader
+from skimage.segmentation import find_boundaries
 from PIL import Image
 
 from seg2link_unet2d.preprocess import load_image, _make_folder, _normalize_image, _normalize_label, divide_flip_rotate, \
@@ -134,13 +135,15 @@ class TrainingUNet2D:
         paths of train images, labels, test images, labels and models
     """
 
-    def __init__(self, data_path: str, model: nn.Module):
+    def __init__(self, data_path: str, model: nn.Module, is_mask_instance: bool = False, size_subimages = SIZE_SUBIMAGES):
         self.test_image_filenames = []
         self.train_loader = None
         self.train_img1_size = ImageSize(0, 0)
         self.train_stat = Train_Stat(0, 0)
         self.data_path = os.path.abspath(data_path)
         self.model = model()
+        self.is_mask_instance = is_mask_instance
+        self.size_subimages = size_subimages
         self.paths = DataPaths("", "", "", "", "")
         self.raw_data = DataRaw([], [])
         self.norm_data = DataNorm([], [])
@@ -172,8 +175,41 @@ class TrainingUNet2D:
         """
         train_image = load_image(self.paths.train_image)
         train_label = load_image(self.paths.train_cells)
+        min_size = np.min(train_label[0].shape)
+        if min_size < self.size_subimages[0]:
+            self.size_subimages = (min_size, min_size)
+        if self.is_mask_instance:
+            labels_rm_bd = self._remove_2d_boundary(np.asarray(train_label)) > 0
+            train_label = [slice for slice in labels_rm_bd]
         self.train_img1_size = ImageSize(*train_image[0].shape)
         self.raw_data = DataRaw(train_image, train_label)
+
+    @staticmethod
+    def _remove_2d_boundary(labels3d: ndarray) -> ndarray:
+        """
+        Remove boundaries between touching cells in x-y plane
+
+        Parameters
+        ----------
+        labels3d :
+            The 3D image of cell labels
+
+        Returns
+        -------
+        labels_new :
+            The new image with the boundaries removed
+
+        Notes
+        -----
+        There is a bug in find_boundaries(label, mode="outer") in some environment.
+        https://github.com/scikit-image/scikit-image/issues/4558
+        Force label as np.uint16 can solve the problem.
+        """
+        labels_new = labels3d.copy()
+        for z in range(labels3d.shape[0]):
+            labels = labels_new[z, ...].view()
+            labels[find_boundaries(labels.astype(np.uint16), mode='outer')] = 0
+        return labels_new
 
     def draw_dataset(self, percentile_top=99.9, percentile_bottom=0.1):
         """
@@ -203,8 +239,8 @@ class TrainingUNet2D:
         print("Images were normalized")
 
     def divide_images(self, batch_size=16):
-        train_subimage = divide_flip_rotate(self.norm_data.train_image, SIZE_SUBIMAGES).astype(np.float32)
-        train_subcells = divide_flip_rotate(self.norm_data.train_cells, SIZE_SUBIMAGES)
+        train_subimage = divide_flip_rotate(self.norm_data.train_image, self.size_subimages).astype(np.float32)
+        train_subcells = divide_flip_rotate(self.norm_data.train_cells, self.size_subimages)
 
         self.train_data = TensorDataset(torch.tensor(train_subimage),
                                         torch.tensor(train_subcells, dtype=torch.bool))
@@ -239,7 +275,6 @@ class TrainingUNet2D:
         else:
             imgs_1_ = imgs_raw[0]
             imgs_2_ = imgs_label[0]
-        print(12 * siz_x / siz_y)
         fig, axs = plt.subplots(1, 2, figsize=(20, 3 + int(10 * siz_x / siz_y)))
         vmax_train = np.percentile(imgs_raw, percentile_top)
         vmin_train = np.percentile(imgs_raw, percentile_bottom)
