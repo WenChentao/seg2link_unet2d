@@ -135,7 +135,9 @@ class TrainingUNet2D:
         paths of train images, labels, test images, labels and models
     """
 
-    def __init__(self, data_path: str, model: nn.Module, is_mask_instance: bool = False, size_subimages = SIZE_SUBIMAGES):
+    def __init__(self, data_path: str, model: nn.Module, is_mask_instance: bool = False, size_subimages = SIZE_SUBIMAGES,
+                 draw_num = 1):
+        assert draw_num >= 1
         self.test_image_filenames = []
         self.train_loader = None
         self.train_img1_size = ImageSize(0, 0)
@@ -144,6 +146,7 @@ class TrainingUNet2D:
         self.model = model()
         self.is_mask_instance = is_mask_instance
         self.size_subimages = size_subimages
+        self.draw_num = draw_num
         self.paths = DataPaths("", "", "", "", "")
         self.raw_data = DataRaw([], [])
         self.norm_data = DataNorm([], [])
@@ -223,8 +226,8 @@ class TrainingUNet2D:
         """
         axs = self._subplots_2images(percentile_bottom, percentile_top,
                                      self.raw_data.train_image, self.raw_data.train_cells)
-        axs[0].set_title("Image #1 (train)", fontdict=TITLE_STYLE)
-        axs[1].set_title("Cell annotation #1 (train)", fontdict=TITLE_STYLE)
+        axs[0].set_title(f"Image #{self.draw_num} (train)", fontdict=TITLE_STYLE)
+        axs[1].set_title(f"Cell annotation #{self.draw_num} (train)", fontdict=TITLE_STYLE)
         plt.tight_layout()
         plt.pause(0.1)
 
@@ -259,25 +262,24 @@ class TrainingUNet2D:
         """
         axs = self._subplots_2images(percentile_bottom, percentile_top,
                                      self.norm_data.train_image, self.norm_data.train_cells)
-        axs[0].set_title("Normalized image #1 (train)", fontdict=TITLE_STYLE)
-        axs[1].set_title("Cell annotation #1 (train)", fontdict=TITLE_STYLE)
+        axs[0].set_title(f"Normalized image #{self.draw_num} (train)", fontdict=TITLE_STYLE)
+        axs[1].set_title(f"Cell annotation #{self.draw_num} (train)", fontdict=TITLE_STYLE)
         plt.tight_layout()
         plt.pause(0.1)
 
-    @staticmethod
-    def _subplots_2images(percentile_bottom, percentile_top, imgs_raw: List[ndarray], imgs_label: List[ndarray]):
+    def _subplots_2images(self, percentile_bottom, percentile_top, imgs_raw: List[ndarray], imgs_label: List[ndarray]):
         """Make a (2, 2) layout figure to show 4 images"""
-        siz_x, siz_y = imgs_raw[0].shape
+        siz_x, siz_y = imgs_raw[self.draw_num-1].shape
         if siz_x > siz_y:
-            imgs_1_ = imgs_raw[0].transpose()
-            imgs_2_ = imgs_label[0].transpose()
+            imgs_1_ = imgs_raw[self.draw_num-1].transpose()
+            imgs_2_ = imgs_label[self.draw_num-1].transpose()
             siz_y, siz_x = siz_x, siz_y
         else:
-            imgs_1_ = imgs_raw[0]
-            imgs_2_ = imgs_label[0]
+            imgs_1_ = imgs_raw[self.draw_num-1]
+            imgs_2_ = imgs_label[self.draw_num-1]
         fig, axs = plt.subplots(1, 2, figsize=(20, 3 + int(10 * siz_x / siz_y)))
-        vmax_train = np.percentile(imgs_raw, percentile_top)
-        vmin_train = np.percentile(imgs_raw, percentile_bottom)
+        vmax_train = np.percentile(imgs_raw[self.draw_num-1], percentile_top)
+        vmin_train = np.percentile(imgs_raw[self.draw_num-1], percentile_bottom)
         axs[0].imshow(imgs_1_, vmin=vmin_train, vmax=vmax_train, cmap="gray")
         axs[1].imshow(imgs_2_, vmin=0, vmax=1, cmap="gray")
         return axs
@@ -399,11 +401,13 @@ class TrainingUNet2D:
 
     def _draw_prediction(self, step, percentile_top=99.9, percentile_bottom=0.1):
         """Draw the predictions in current step"""
-        train_prediction = unet2_prediction(self.norm_data.train_image[0], self.model)
+        train_prediction = unet2_prediction(self.norm_data.train_image[self.draw_num-1], self.model)
+        pred_list = [-1 for i in range(len(self.raw_data.train_image))]
+        pred_list[self.draw_num - 1] = train_prediction
         axs = self._subplots_2images(percentile_bottom, percentile_top,
-                                     self.raw_data.train_image, [train_prediction])
-        axs[0].set_title("Image #1 (train)", fontdict=TITLE_STYLE)
-        axs[1].set_title(f"Cell prediction #1 at step {step} (train)", fontdict=TITLE_STYLE)
+                                     self.raw_data.train_image, pred_list)
+        axs[0].set_title(f"Image #{self.draw_num} (train)", fontdict=TITLE_STYLE)
+        axs[1].set_title(f"Cell prediction #{self.draw_num} at step {step} (train)", fontdict=TITLE_STYLE)
         plt.tight_layout()
         plt.pause(0.1)
 
@@ -415,8 +419,11 @@ class TrainingUNet2D:
         test_image_filenames = load_filenames(self.paths.test_image)
         test_img1_norm = (load_one_image(test_image_filenames[0]) - self.train_stat.mean) / self.train_stat.std
         test_prediction_img1 = unet2_prediction(test_img1_norm, self.model)
+        pred_list = img_list = [-1 for i in range(len(self.raw_data.train_image))]
+        pred_list[self.draw_num - 1] = test_prediction_img1
+        img_list[self.draw_num - 1] = test_img1_norm
         axs = self._subplots_2images(percentile_bottom, percentile_top,
-                                     [test_img1_norm], [test_prediction_img1])
+                                     img_list, pred_list)
         axs[0].set_title("Image #1 (test)", fontdict=TITLE_STYLE)
         axs[1].set_title(f"Cell prediction #1 (test)", fontdict=TITLE_STYLE)
         plt.tight_layout()
@@ -427,9 +434,14 @@ class TrainingUNet2D:
         if slice_number > len(test_image_filenames) or slice_number <= 0:
             raise ValueError(f"The slice_number must be between 1 and {len(test_image_filenames)}")
         test_img_norm = (load_one_image(test_image_filenames[slice_number-1]) - self.train_stat.mean) / self.train_stat.std
+        print(test_img_norm, self.train_stat.std)
         test_prediction_img = unet2_prediction(test_img_norm, self.model)
+        pred_list = [-1 for i in range(len(self.raw_data.train_image))]
+        img_list = [-1 for i in range(len(self.raw_data.train_image))]
+        pred_list[self.draw_num - 1] = test_prediction_img
+        img_list[self.draw_num - 1] = test_img_norm
         axs = self._subplots_2images(percentile_bottom, percentile_top,
-                                     [test_img_norm], [test_prediction_img])
+                                     img_list, pred_list)
         axs[0].set_title(f"Image #{slice_number} (test)", fontdict=TITLE_STYLE)
         axs[1].set_title(f"Cell prediction #{slice_number} (test)", fontdict=TITLE_STYLE)
         plt.tight_layout()
