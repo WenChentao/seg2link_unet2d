@@ -370,6 +370,9 @@ class TrainingUNet2D:
                     torch.save(self.model.state_dict(), Path(self.paths.models) / (weights_name + f"epoch{epoch}.pt"))
                     torch.save(self.model.state_dict(), Path(self.paths.models) / "pretrained_unet3.pt")
                     self._draw_prediction(epoch)
+                else:
+                    print(f"Train accuracy (balanced) was not improved: "
+                          f"{train_accuracy:4f} (pos: {acc_pos:4f}, neg: {acc_neg:4f})")
             self.train_acc.append(train_accuracy)
             self.current_epoch += 1
         print(f"The best model has been saved as: \n{str(Path(self.paths.models) / 'pretrained_unet3.pt')}")
@@ -429,16 +432,15 @@ class TrainingUNet2D:
         plt.tight_layout()
         plt.pause(0.1)
 
-    def predict_test_image(self, slice_number=1, percentile_top=99.9, percentile_bottom=0.1):
+    def predict_test_image(self, slice_number=1, threshold=0.5, percentile_top=99.9, percentile_bottom=0.1):
         test_image_filenames = load_filenames(self.paths.test_image)
         if slice_number > len(test_image_filenames) or slice_number <= 0:
             raise ValueError(f"The slice_number must be between 1 and {len(test_image_filenames)}")
         test_img_norm = (load_one_image(test_image_filenames[slice_number-1]) - self.train_stat.mean) / self.train_stat.std
-        print(test_img_norm, self.train_stat.std)
         test_prediction_img = unet2_prediction(test_img_norm, self.model)
         pred_list = [-1 for i in range(len(self.raw_data.train_image))]
         img_list = [-1 for i in range(len(self.raw_data.train_image))]
-        pred_list[self.draw_num - 1] = test_prediction_img
+        pred_list[self.draw_num - 1] = test_prediction_img > threshold
         img_list[self.draw_num - 1] = test_img_norm
         axs = self._subplots_2images(percentile_bottom, percentile_top,
                                      img_list, pred_list)
@@ -447,13 +449,13 @@ class TrainingUNet2D:
         plt.tight_layout()
         plt.pause(0.1)
 
-    def save_predictions_test(self):
+    def save_predictions_test(self, threshold=0.5):
         test_image_filenames = load_filenames(self.paths.test_image)
         with tqdm(total=len(test_image_filenames), ncols=50, unit='slice') as pbar:
             for filename in test_image_filenames:
                 path_file = Path(filename)
                 img_norm = (load_one_image(filename) - self.train_stat.mean) / self.train_stat.std
                 prediction = unet2_prediction(img_norm, self.model)
-                prediction_uint8 = (prediction > 0.5).view(np.uint8)
+                prediction_uint8 = (prediction > threshold).view(np.uint8)
                 Image.fromarray(prediction_uint8).save(str(Path(self.paths.test_cells) / ("cell_" + path_file.stem +".tiff")))
                 pbar.update(1)
